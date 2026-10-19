@@ -11,6 +11,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/MyFirstVRScene.unity
     guid: bfc9787d1a31f41e99260b9a15f4c02b
+  - enabled: 1
+    path: Assets/Basheer.unity
+    guid: b09ac817b2be177489a0a3b1c94af0f7
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 8e6baab53860f439698681af20e94360, type: 2}

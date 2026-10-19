@@ -104,3 +104,9 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/

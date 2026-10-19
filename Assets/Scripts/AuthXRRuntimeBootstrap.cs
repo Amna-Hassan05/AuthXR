@@ -1,15 +1,31 @@
+using System.Collections;
+using Unity.XR.CoreUtils;
 using UnityEngine;
+using UnityEngine.InputSystem.XR;
+using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Inputs;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Teleportation;
 
 /// <summary>
 /// AuthXR Play Mode setup: keep instruments visible/stable, enable grab + highlight,
 /// thicken floor, leave kidney_tray non-grabbable.
+/// Execution order is earlier than XR Device Simulator (-29991) so Quest tracking
+/// is not hijacked by simulated HMD/controller devices.
 /// </summary>
-[DefaultExecutionOrder(-100)]
+[DefaultExecutionOrder(-32768)]
 public class AuthXRRuntimeBootstrap : MonoBehaviour
 {
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    static void DeviceFixAfterSceneLoad()
+    {
+        DisableXrDeviceSimulatorOnDevice.StripAllInScene();
+        DisableNonXrCameras();
+        ConfigureActiveXrOrigins();
+        EnableXriInputActions();
+    }
+
     const float MinGrabWorldSize = 0.1f;
     const int TeleportInteractionLayer = 31;
 
@@ -18,14 +34,162 @@ public class AuthXRRuntimeBootstrap : MonoBehaviour
 
     void Awake()
     {
+        // Device-only: the in-scene XR Device Simulator hijacks HMD/controller
+        // poses on Quest. It must be disabled before those components Enable.
+        DisableXrDeviceSimulatorOnDevice.StripAllInScene();
+        DisableNonXrCameras();
+        ConfigureActiveXrOrigins();
+        EnableXriInputActions();
+        AssignInteractionManagerIfMissing();
+
         if (fixFloor)
             FixFloor();
+
+        PreventPlayerFalling();
 
         // Always strip tray first so it never gets grab/physics.
         StripNonGrabbable("kidney_tray");
 
         if (fixInstruments)
             FixInstruments();
+
+        if (!Application.isEditor)
+            StartCoroutine(RebindOpenXrAfterSimulatorDisabled());
+    }
+
+    static void DisableNonXrCameras()
+    {
+        var allowed = new System.Collections.Generic.HashSet<Camera>();
+        var origins = FindObjectsByType<XROrigin>(FindObjectsInactive.Include);
+        for (int i = 0; i < origins.Length; i++)
+        {
+            var origin = origins[i];
+            if (origin == null || !origin.gameObject.activeInHierarchy)
+                continue;
+
+            var cameras = origin.GetComponentsInChildren<Camera>(true);
+            for (int c = 0; c < cameras.Length; c++)
+            {
+                if (cameras[c] != null)
+                    allowed.Add(cameras[c]);
+            }
+        }
+
+        var allCameras = FindObjectsByType<Camera>(FindObjectsInactive.Include);
+        for (int i = 0; i < allCameras.Length; i++)
+        {
+            var cam = allCameras[i];
+            if (cam == null || allowed.Contains(cam))
+                continue;
+
+            cam.enabled = false;
+            var listener = cam.GetComponent<AudioListener>();
+            if (listener != null)
+                listener.enabled = false;
+
+            if (cam.gameObject.activeSelf)
+                cam.gameObject.SetActive(false);
+        }
+    }
+
+    static void ConfigureActiveXrOrigins()
+    {
+        var origins = FindObjectsByType<XROrigin>(FindObjectsInactive.Exclude);
+        for (int i = 0; i < origins.Length; i++)
+        {
+            var origin = origins[i];
+            if (origin == null)
+                continue;
+
+            origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
+            origin.CameraYOffset = 1.36144f;
+            origin.transform.localScale = Vector3.one;
+        }
+    }
+
+    IEnumerator RebindOpenXrAfterSimulatorDisabled()
+    {
+        DisableXrDeviceSimulatorOnDevice.StripAllInScene();
+        yield return null;
+        DisableXrDeviceSimulatorOnDevice.StripAllInScene();
+        DisableNonXrCameras();
+        ConfigureActiveXrOrigins();
+        ApplyFloorOrDeviceCameraOffset();
+        EnableXriInputActions();
+        RefreshTrackedPoseDrivers();
+
+        for (int i = 0; i < 8; i++)
+            yield return null;
+
+        ApplyFloorOrDeviceCameraOffset();
+        EnableXriInputActions();
+        RefreshTrackedPoseDrivers();
+    }
+
+    static void ApplyFloorOrDeviceCameraOffset()
+    {
+        var origins = FindObjectsByType<XROrigin>(FindObjectsInactive.Exclude);
+        for (int i = 0; i < origins.Length; i++)
+        {
+            var origin = origins[i];
+            if (origin == null || origin.CameraFloorOffsetObject == null)
+                continue;
+
+            Transform offset = origin.CameraFloorOffsetObject.transform;
+            offset.localScale = Vector3.one;
+
+            bool floor = (origin.CurrentTrackingOriginMode & TrackingOriginModeFlags.Floor) != 0;
+            float y = floor ? 0f : origin.CameraYOffset;
+            offset.localPosition = new Vector3(offset.localPosition.x, y, offset.localPosition.z);
+        }
+    }
+
+    static void RefreshTrackedPoseDrivers()
+    {
+        var drivers = FindObjectsByType<TrackedPoseDriver>(FindObjectsInactive.Exclude);
+        for (int i = 0; i < drivers.Length; i++)
+        {
+            var driver = drivers[i];
+            if (driver == null)
+                continue;
+            driver.enabled = false;
+            driver.enabled = true;
+        }
+    }
+
+    static void EnableXriInputActions()
+    {
+        var managers = FindObjectsByType<InputActionManager>(FindObjectsInactive.Include);
+        for (int i = 0; i < managers.Length; i++)
+        {
+            var manager = managers[i];
+            if (manager == null)
+                continue;
+            if (!manager.gameObject.activeInHierarchy)
+                continue;
+            manager.EnableInput();
+        }
+    }
+
+    static void AssignInteractionManagerIfMissing()
+    {
+        var xrManager = FindFirstObjectByType<XRInteractionManager>();
+        if (xrManager == null)
+            return;
+
+        var teleports = FindObjectsByType<TeleportationArea>(FindObjectsInactive.Include);
+        for (int i = 0; i < teleports.Length; i++)
+        {
+            if (teleports[i] != null && teleports[i].interactionManager == null)
+                teleports[i].interactionManager = xrManager;
+        }
+
+        var grabs = FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Include);
+        for (int i = 0; i < grabs.Length; i++)
+        {
+            if (grabs[i] != null && grabs[i].interactionManager == null)
+                grabs[i].interactionManager = xrManager;
+        }
     }
 
     void FixFloor()
@@ -55,6 +219,30 @@ public class AuthXRRuntimeBootstrap : MonoBehaviour
         {
             InteractionLayerMask mask = 1 << TeleportInteractionLayer;
             teleport.interactionLayers = mask;
+        }
+
+        // A dynamic Rigidbody on Floor makes the ground itself fall under physics gravity.
+        var floorBody = floor.GetComponent<Rigidbody>();
+        if (floorBody != null)
+        {
+            floorBody.useGravity = false;
+            floorBody.isKinematic = true;
+            floorBody.linearVelocity = Vector3.zero;
+            floorBody.angularVelocity = Vector3.zero;
+            floorBody.Sleep();
+        }
+    }
+
+    static void PreventPlayerFalling()
+    {
+        var origins = FindObjectsByType<XROrigin>(FindObjectsInactive.Exclude);
+        for (int i = 0; i < origins.Length; i++)
+        {
+            var origin = origins[i];
+            if (origin == null)
+                continue;
+            if (origin.GetComponent<PlayerFallPrevention>() == null)
+                origin.gameObject.AddComponent<PlayerFallPrevention>();
         }
     }
 
