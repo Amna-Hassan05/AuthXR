@@ -1,0 +1,21 @@
+metric,public,mine,group
+rows,500.0,110.0,HAND POSITION
+columns,60.0,60.0,HAND POSITION
+constant_columns,58.0,0.0,HAND POSITION
+constant_columns_%,96.7,0.0,HAND POSITION
+raw_negative_std_%,100.0,0.0,HAND POSITION
+raw_min>max_%,88.4,0.0,HAND POSITION
+mean_vs_median_corr,,0.998,HAND POSITION
+avg_abs_skew,0.63,1.68,HAND POSITION
+avg_excess_kurtosis,2.31,8.47,HAND POSITION
+outliers_|z|>3_%,0.99,0.52,HAND POSITION
+rows,500.0,110.0,HAND ROTATION
+columns,80.0,80.0,HAND ROTATION
+constant_columns,0.0,0.0,HAND ROTATION
+constant_columns_%,0.0,0.0,HAND ROTATION
+raw_negative_std_%,56.6,0.0,HAND ROTATION
+raw_min>max_%,55.3,0.0,HAND ROTATION
+mean_vs_median_corr,0.88,0.968,HAND ROTATION
+avg_abs_skew,0.99,1.36,HAND ROTATION
+avg_excess_kurtosis,5.05,2.16,HAND ROTATION
+outliers_|z|>3_%,0.98,1.7,HAND ROTATION
